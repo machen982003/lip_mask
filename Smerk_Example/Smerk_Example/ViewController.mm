@@ -11,6 +11,8 @@
 #import <GPUImage/GPUImage.h>
 #include <iostream>
 #include "armadillo"
+#include <math.h>
+#define PI 3.1415926
 
 using namespace std;
 using namespace arma;
@@ -25,7 +27,9 @@ using namespace arma;
     CGAffineTransform portraitRotationTransform_;
     CGAffineTransform texelToPixelTransform_;
     GPUImageRawDataOutput *rawDataOutput; //can process the gpu data
-    fmat global_q;
+    CGRect mouth_rect;
+    BOOL have_mouth;
+    BOOL finished_processing;
      // save the gpu image
 
 }
@@ -38,7 +42,7 @@ using namespace arma;
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
     
-    
+    [self.view.layer setAffineTransform:CGAffineTransformMakeScale(-1, 1)];
     // Setup GPUImageView (not we are not using UIImageView here).........
     cameraView_ = [[GPUImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, self.view.frame.size.width, self.view.frame.size.height)];
     
@@ -48,7 +52,12 @@ using namespace arma;
     rawDataOutput = [[GPUImageRawDataOutput alloc]initWithImageSize:CGSizeMake(self.view.frame.size.width, self.view.frame.size.height) resultsInBGRAFormat:true];
     [detector_ setOutputImageOrientation:UIInterfaceOrientationPortrait]; // Set to portrait
     cameraView_.fillMode = kGPUImageFillModePreserveAspectRatio;
+
     GPUImageMedianFilter *medianFilter = [[GPUImageMedianFilter alloc] init];
+    have_mouth = false;
+    finished_processing = true;
+    mouth_rect = CGRectMake(0, 0, 0, 0);
+    
     [detector_ addTarget:rawDataOutput];
     [detector_ addTarget:medianFilter];
     [medianFilter addTarget:cameraView_];
@@ -71,11 +80,149 @@ using namespace arma;
                        [self updateFaceFeatureTrackingViewWithObjects:detectedObjects];
                     }
                }];
+    //set up the contour extraction method
     
+    __unsafe_unretained GPUImageRawDataOutput *weakOutput = rawDataOutput;
+    __unsafe_unretained ViewController *weakself = self;
+    [rawDataOutput setNewFrameAvailableBlock:^{
+        [weakOutput lockFramebufferForReading];
+        GLubyte *outputByte = [weakOutput rawBytesForImage];
+        if (have_mouth == true && finished_processing == true) {
+            [weakself extract_mout:outputByte];
+        }
+        //[weakself donothing:Q];
+        [weakOutput unlockFramebufferAfterReading];
+    }];
+
     // Finally start the camera
     [detector_ startCameraCapture];
 }
 
+-(void)extract_mout:(GLubyte *) outputByte
+{
+    // cout<<Q.n_cols<<" "<<Q.n_rows<<endl;
+    finished_processing = false;
+    fmat mou_rgb(3, int(mouth_rect.size.width)*int(mouth_rect.size.height), fill::zeros);
+    
+    for(int i=0; i<mouth_rect.size.height-1;i++){
+        for(int j = 0; j<mouth_rect.size.width-1;j++){
+            for(int k = 0; k<3; k++){
+                mou_rgb.at(2-k,i*mouth_rect.size.width+j) = outputByte[((j+int(mouth_rect.origin.x))+(i+int(mouth_rect.origin.y))*int(self.view.frame.size.width))*4+k];
+            }
+        }
+    }
+    fmat A = "0.299 0.587 0.114; 0.595716 -0.274453 -0.321263;0.211456 -0.622591 0.31135";
+    fmat mou_YIQ = A*mou_rgb;
+    fmat Q= mou_YIQ.row(2);
+    //  cout << mou_YIQ.n_cols<<endl;
+    Q.reshape(int(mouth_rect.size.height), int(mouth_rect.size.width));
+    fmat U(size(Q),fill::ones);
+    U = U*2;
+    uword width = U.n_cols;
+    uword height = U.n_rows;
+    fmat sub_matrix(int(height*0.4),int(width*0.8),fill::zeros);
+    sub_matrix = sub_matrix -2;
+    U.submat(int(height*0.3), int(width*0.1), int(height*0.3)+int(height*0.4)-1, int(width*0.1)+int(width*0.8)-1) = sub_matrix;
+    U = [self acwe:U image:Q];
+    finished_processing = true;
+}
+
+//get the contour of mouth
+-(fmat)acwe:(fmat)Uinput image:(fmat) Qinput
+{
+    
+    fmat U = Uinput;
+    fmat Q = Qinput;
+    int mu=1;
+    int lambda1=1; int lambda2=1;
+    float timestep = .1; int v=10; int epsilon=1; int numIter = 5;
+    
+    for (int k1=1; k1< numIter; k1++){
+        U=[self NeumannBoundCond:U];
+        fmat K=[self curvature_central:U];
+        fmat DrcU = pow(pow(U,2)+pow(epsilon,2),-1);
+        DrcU = DrcU * (epsilon/PI);
+        fmat Hu= (atan(U/epsilon)*(2/PI)+1)*0.5;
+        float th = 0.5;
+        uvec inside_idx = find(Hu<th);
+        uvec outside_idx = find(Hu>=th);
+        float c1 = mean(Q.elem(inside_idx));
+        float c2 = mean(Q.elem(outside_idx));
+        fmat data_force = -DrcU%(mu*K - v- lambda1*pow((Q-c1),2) +lambda2*pow((Q-c2), 2));
+        //    P=pc*(4*del2(u) - K);               %ref[2]
+        U = U+timestep*data_force;
+    }
+   // cout << U.row(int(U.n_rows/2))<<endl;
+    //cout<<U.row(int(U.n_rows/4))<<endl;
+    return U;
+    
+}
+
+-(fmat)NeumannBoundCond:(fmat) f
+{
+    uword nrow = f.n_rows;
+    uword ncol = f.n_cols;
+    fmat g = f;
+    //change 4 corner points
+    g.at(0, 0) = g.at(2, 2);
+    g.at(0, ncol-1) = g.at(2,ncol-3);
+    g.at(nrow-1,0) = g.at(nrow-3,2);
+    g.at(nrow-1,ncol-1) = g.at(nrow-3,ncol-3);
+    //change top and bottom edge
+    g.submat(0, 1, 0, ncol-2) = g.submat(2, 1, 2, ncol-2);
+    g.submat(nrow-1, 1, nrow-1, ncol-2) = g.submat(nrow-3, 1, nrow-3, ncol-2);
+    //change left and right edge
+    g.submat(1, 0, nrow-2, 0) = g.submat(1, 2, nrow-2, 2);
+    g.submat(1, ncol-1, nrow-2, ncol-1) = g.submat(1, ncol-3, nrow-2, ncol-3);
+    return g;
+}
+
+-(fmat)curvature_central:(fmat) u
+{
+    fmat k;
+    fmat gx = [self gradient:u andIfXdirection:true];
+    fmat gy = [self gradient:u andIfXdirection:false];
+    fmat normDu = sqrt(pow(gx,2)+pow(gy,2)+0.00000001);
+    fmat Nx = gx/normDu;
+    fmat Ny = gy/normDu;
+    fmat nxx = [self gradient:Nx andIfXdirection:true];
+    fmat nyy = [self gradient:Ny andIfXdirection:false];
+    k = nxx+nyy;
+    return k;
+    
+}
+
+-(fmat)gradient:(fmat) input andIfXdirection:(BOOL) direction
+{
+    fmat g(size(input), fill::zeros);
+    //get the x direction gradient
+    if(direction){
+        uword n = input.n_rows;
+        if (n>1) {
+            g.row(0) = input.row(1) -input.row(0);
+            g.row(n-1) = input.row(n-1) - input.row(n-2);
+        }
+        if (n>2){
+            g.rows(1, n-2) = (input.rows(2,n-1) - input.rows(0,n-3))/2;
+            
+        }
+    }
+    //get the y direction gradient
+    else{
+        uword n = input.n_cols;
+        if(n>1){
+            g.col(0) = input.col(1) - input.col(0);
+            g.col(n-1) = input.col(n-1) - input.col(n-2);
+            
+        }
+        if (n>2) {
+            g.cols(1, n-2) = (input.cols(2, n-1) - input.cols(0, n-3))/2;
+        }
+        
+    }
+    return g;
+    
+}
 
 - (void)setupFaceTrackingViews
 {
@@ -93,9 +240,10 @@ using namespace arma;
     mouthFeatureTrackingView_ = [[UIView alloc] initWithFrame:CGRectZero];
     mouthFeatureTrackingView_.layer.borderColor = [[UIColor redColor] CGColor];
     mouthFeatureTrackingView_.layer.borderWidth = 3;
-    mouthFeatureTrackingView_.backgroundColor = [UIColor clearColor];
+    mouthFeatureTrackingView_.backgroundColor = [UIColor yellowColor];
     mouthFeatureTrackingView_.hidden = YES;
     mouthFeatureTrackingView_.userInteractionEnabled = NO;
+    mouthFeatureTrackingView_.alpha =0.5;
     [self.view addSubview:mouthFeatureTrackingView_]; // Add as a sub-view
 }
 
@@ -128,6 +276,7 @@ using namespace arma;
         faceFeatureTrackingView_.frame = face;
         faceFeatureTrackingView_.hidden = NO;
         if (feature.hasMouthPosition) {
+            
             CGPoint mouth_p = feature.mouthPosition;
             CGRect mouth_r = CGRectMake(mouth_p.x-face.size.width*0.05, mouth_p.y-face.size.height*0.35, face.size.width*0.5, face.size.height*0.7);
             mouth_r = CGRectApplyAffineTransform(mouth_r, portraitRotationTransform_);
@@ -138,98 +287,17 @@ using namespace arma;
             
             if(10<mouth_r.size.height && mouth_r.size.height<200 && mouth_r.size.width>10&& mouth_r.size.width<200)
             {
-          //      contourmouth_.hidden = NO;
-                contourmouth_.frame = mouth_r;
-                __unsafe_unretained GPUImageRawDataOutput *weakOutput = rawDataOutput;
-                __unsafe_unretained ViewController *weakself = self;
-                __unsafe_unretained UIView *weakcontour = contourmouth_;
-                [rawDataOutput setNewFrameAvailableBlock:^{
-                    weakcontour.hidden = NO;
-                    [weakOutput lockFramebufferForReading];
-                    GLubyte *outputByte = [weakOutput rawBytesForImage];
-                    fmat mou_rgb(3, int(mouth_r.size.width)*int(mouth_r.size.height), fill::zeros);
-                    for(int i=0; i<mouth_r.size.height-1;i++){
-                        for(int j = 0; j<mouth_r.size.width-1;j++){
-                            for(int k = 0; k<3; k++){
-                                mou_rgb.at(2-k,i*mouth_r.size.width+j) = outputByte[((j+int(mouth_r.origin.x))+(i+int(mouth_r.origin.y))*int(self.view.frame.size.width))*4+k];
-                            }
-                        }
-                    }
-                    fmat A = "0.299 0.587 0.114; 0.595716 -0.274453 -0.321263;0.211456 -0.622591 0.31135";
-                    fmat mou_YIQ = A*mou_rgb;
-                    fmat Q= mou_YIQ.row(2);
-                    //  cout << mou_YIQ.n_cols<<endl;
-                    Q.reshape(int(mouth_r.size.height), int(mouth_r.size.width));
-                    [weakself donothing:Q];
-                    [weakOutput unlockFramebufferAfterReading];
-            }];
+                mouth_rect = mouth_r;
+                have_mouth = true;
+            }
+            else
+            {
+                have_mouth = false;
             }
         }
     }
 }
 
--(void)donothing:(fmat) Q
-{
-   // cout<<Q.n_cols<<" "<<Q.n_rows<<endl;
-    fmat U(size(Q),fill::ones);
-    U = U*2;
-    uword width = U.n_cols;
-    uword height = U.n_rows;
-    fmat sub_matrix(int(height*0.4),int(width*0.8),fill::zeros);
-    sub_matrix = sub_matrix -2;
-    U.submat(int(height*0.3), int(width*0.1), int(height*0.3)+int(height*0.4)-1, int(width*0.1)+int(width*0.8)-1) = sub_matrix;
-    U = [self acwe:U image:Q];
-}
-
--(fmat)acwe:(fmat)U image:(fmat) Q
-{
-    
-    return U;
-    int mu=1;
-    int lambda1=1; int lambda2=1;
-    int pc = 1;
-    float pi = 3.1415926;
-    float timestep = .1; int v=10; int epsilon=1; int numIter = 5;
-    
-    for (int k1=1; k1< numIter; k1++){
-        U=[self NeumannBoundCond:U];
-        fmat DrcU = pow(pow(U,2)+pow(epsilon,2),-1);
-        DrcU = DrcU * (epsilon/pi);
-        fmat Hu= (atan(U/epsilon)*(2/pi)+1)*0.5;
-    }
-    
-//    K=curvature_central(u);
-//    DrcU=(epsilon/pi)./(epsilon^2+u.^2);                %eq.(9), ref[2] the delta function
-//    Hu=0.5*(1+(2/pi)*atan(u./epsilon));                 %eq.(8)[2] the character function how large is 'epsilon'?
-//    th = .5;
-//    inside_idx = find(Hu(:) < th); outside_idx = find(Hu(:) >= th);
-//    c1 = mean(Img(inside_idx)); c2 = mean(Img(outside_idx));
-//    data_force = -DrcU.*(mu*K - v - lambda1*(Img-c1).^2 + lambda2*(Img-c2).^2);
-//    %introduce the distance regularation term:
-//    P=pc*(4*del2(u) - K);               %ref[2]
-//    u = u+timestep*(data_force+P);
-//    end
-    
-}
-
--(fmat)NeumannBoundCond:(fmat) f
-{
-    uword nrow = f.n_rows;
-    uword ncol = f.n_cols;
-    fmat g = f;
-    //change 4 corner points
-    g.at(0, 0) = g.at(2, 2);
-    g.at(0, ncol-1) = g.at(2,ncol-3);
-    g.at(nrow-1,0) = g.at(nrow-3,2);
-    g.at(nrow-1,ncol-1) = g.at(nrow-3,ncol-3);
-    //change top and bottom edge
-    g.submat(0, 1, 0, ncol-2) = g.submat(2, 1, 2, ncol-2);
-    g.submat(nrow-1, 1, nrow-1, ncol-2) = g.submat(nrow-3, 1, nrow-3, ncol-2);
-    //change left and right edge
-    g.submat(1, 0, nrow-2, 0) = g.submat(1, 2, nrow-2, 2);
-    g.submat(1, ncol-1, nrow-2, ncol-1) = g.submat(1, ncol-3, nrow-2, ncol-3);
-    return g;
-}
 
 // Calculate transformations for displaying output on the screen
 - (void)calculateTransformations
