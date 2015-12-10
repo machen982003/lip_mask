@@ -12,7 +12,6 @@
 
 #ifdef __cplusplus
 #include <iostream>
-#include "armadillo"
 #include <opencv2/opencv.hpp>
 #include <math.h>
 #endif
@@ -20,7 +19,6 @@
 #define PI 3.1415926
 
 using namespace std;
-using namespace arma;
 @interface ViewController () {
     // Setup the view (this time using GPUImageView)
     GPUImageView *cameraView_;
@@ -32,7 +30,7 @@ using namespace arma;
     CGAffineTransform texelToPixelTransform_;
     GPUImageRawDataOutput *rawDataOutput; //can process the gpu data
     CGRect mouth_rect;
-    fmat mouth_mask;
+    cv::Mat mouth_mask;
     int upb ;
     int btb ;
     BOOL have_mouth;
@@ -88,17 +86,13 @@ using namespace arma;
     //set up the contour extraction method
     
     __unsafe_unretained ViewController *weakself = self;
-    upb =1;
-    btb = 400;
+
     [rawDataOutput setNewFrameAvailableBlock:^{
-        upb = 200;
-        btb = 300;
+
         [weakself->rawDataOutput lockFramebufferForReading];
      
         GLubyte *outputByte = weakself->rawDataOutput.rawBytesForImage;
         if (have_mouth == true && finished_processing == true) {
-            upb =1;
-            btb = 400;
             [weakself extract_mout:outputByte];
         }
         [weakself->rawDataOutput unlockFramebufferAfterReading];
@@ -112,146 +106,34 @@ using namespace arma;
 {
     // cout<<Q.n_cols<<" "<<Q.n_rows<<endl;
     finished_processing = false;
-   // cube test(reinterpret_cast<char*>(outputByte),10 ,10,4);
-//    fcube test1 = test.subcube(int(mouth_rect.origin.x), int(mouth_rect.origin.y), 0, int(mouth_rect.origin.x+mouth_rect.size.width-1), int(mouth_rect.origin.y+mouth_rect.size.height-1), 2);
-////    
-//    fmat b = test1.slice(0);
-//    b.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
-//    fmat g = test1.slice(1);
-//    g.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
-//    fmat r = test1.slice(2);
-//    r.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
-//    fmat rgb(3,int(mouth_rect.size.width)*int(mouth_rect.size.height), fill::zeros);
-//    rgb.row(0) = r;
-//    rgb.row(1) = g;
-//    rgb.row(2) = b;
+    int col_num = floor(mouth_rect.size.width);
+    int row_nun = floor(mouth_rect.size.height);
+    cv::Mat mou_rgb(3, col_num*row_nun,CV_8U);
     
-    fmat mou_rgb(3, int(mouth_rect.size.width)*int(mouth_rect.size.height), fill::zeros);
-    
-    for(int i=0; i<mouth_rect.size.height-1;i++){
-        for(int j = 0; j<mouth_rect.size.width-1;j++){
+    for(int i=0; i<row_nun;i++){
+        for(int j = 0; j<col_num;j++){
             for(int k = 0; k<3; k++){
-                mou_rgb.at(2-k,i*mouth_rect.size.width+j) = outputByte[((j+int(mouth_rect.origin.x))+(i+int(mouth_rect.origin.y))*480)*4+k];
+                int temp_col = j + floor(mouth_rect.origin.x);
+                int temp_row = i + floor(mouth_rect.origin.y);
+                mou_rgb.at<char>(2-k,i*col_num+j)= outputByte[(temp_col*int(self.view.frame.size.width)+temp_row)*4+k];
             }
         }
     }
-  //  cout<< rgb.col(0)<<"  "<<mou_rgb.col(0)<<endl;
-    fmat A = "0.299 0.587 0.114; 0.595716 -0.274453 -0.321263;0.211456 -0.622591 0.31135";
-    fmat mou_YIQ = A*mou_rgb;
-    fmat Q= mou_YIQ.row(2);
-    //  cout << mou_YIQ.n_cols<<endl;
-    Q.reshape(int(mouth_rect.size.height), int(mouth_rect.size.width));
-    fmat U(size(Q),fill::ones);
-    U = U*2;
-    uword width = U.n_cols;
-    uword height = U.n_rows;
-    fmat sub_matrix(int(height*0.4),int(width*0.8),fill::zeros);
-    sub_matrix = sub_matrix -2;
-    U.submat(int(height*0.3), int(width*0.1), int(height*0.3)+int(height*0.4)-1, int(width*0.1)+int(width*0.8)-1) = sub_matrix;
-
-    [self acwe:U image:Q];
-//    cout<<U<<endl;
-//    cv::Mat cvfromarm(U.n_cols, U.n_rows, CV_32FC1, U.memptr());
-//    cv::Mat cvfinal(cvfromarm.t());
-//    contourmouth_.image = [self UIImageFromCVMat:cvfinal];
+//  //  cout<< rgb.col(0)<<"  "<<mou_rgb.col(0)<<endl;
+//    double A_double[3][3] = {{0.299, 0.587, 0.114},{0.595716, -0.274453, -0.321263},{0.211456, -0.522591, 0.31135}};
+//    cv::Mat A = cv::Mat(3,3,CV_64F,A_double);
+//    cv::Mat mou_YIQ = A*mou_rgb.clone();
+////    cout<<mou_YIQ<<endl;
+//    cv::Mat Q= mou_YIQ.row(2).clone();
+//    Q = Q.reshape(0,int(mouth_rect.size.height));
+//    mouth_mask = Q.clone();
+    cv::Mat redchannel = mou_rgb.row(0).clone();
+ //   cout<<redchannel<<endl;
+    cv::Mat redchannel1 = redchannel.reshape(0,row_nun);
+ //   cout<<redchannel<<endl;
+                                    
+    mouth_mask = redchannel1.clone();
     finished_processing = true;
-}
-
-//get the contour of mouth
--(void)acwe:(fmat)Uinput image:(fmat) Qinput
-{
-    
-    fmat U = Uinput;
-    fmat Q = Qinput;
-    int mu=1;
-    int lambda1=1; int lambda2=1;
-    float timestep = .1; int v=10; int epsilon=1; int numIter = 5;
-    
-    for (int k1=1; k1< numIter; k1++){
-        U=[self NeumannBoundCond:U];
-        fmat K=[self curvature_central:U];
-        fmat DrcU = pow(pow(U,2)+pow(epsilon,2),-1);
-        DrcU = DrcU * (epsilon/PI);
-        fmat Hu= (atan(U/epsilon)*(2/PI)+1)*0.5;
-        float th = 0.5;
-        uvec inside_idx = find(Hu<th);
-        uvec outside_idx = find(Hu>=th);
-        float c1 = mean(Q.elem(inside_idx));
-        float c2 = mean(Q.elem(outside_idx));
-        fmat data_force = -DrcU%(mu*K - v- lambda1*pow((Q-c1),2) +lambda2*pow((Q-c2), 2));
-        //    P=pc*(4*del2(u) - K);               %ref[2]
-        U = U+timestep*data_force;
-    }
-    U.elem((find(U>0))).zeros();
-    U.elem((find(U<0))).ones();
-    mouth_mask = U;
-    
-}
-
--(fmat)NeumannBoundCond:(fmat) f
-{
-    uword nrow = f.n_rows;
-    uword ncol = f.n_cols;
-    fmat g = f;
-    //change 4 corner points
-    g.at(0, 0) = g.at(2, 2);
-    g.at(0, ncol-1) = g.at(2,ncol-3);
-    g.at(nrow-1,0) = g.at(nrow-3,2);
-    g.at(nrow-1,ncol-1) = g.at(nrow-3,ncol-3);
-    //change top and bottom edge
-    g.submat(0, 1, 0, ncol-2) = g.submat(2, 1, 2, ncol-2);
-    g.submat(nrow-1, 1, nrow-1, ncol-2) = g.submat(nrow-3, 1, nrow-3, ncol-2);
-    //change left and right edge
-    g.submat(1, 0, nrow-2, 0) = g.submat(1, 2, nrow-2, 2);
-    g.submat(1, ncol-1, nrow-2, ncol-1) = g.submat(1, ncol-3, nrow-2, ncol-3);
-    return g;
-}
-
--(fmat)curvature_central:(fmat) u
-{
-    fmat k;
-    fmat gx = [self gradient:u andIfXdirection:true];
-    fmat gy = [self gradient:u andIfXdirection:false];
-    fmat normDu = sqrt(pow(gx,2)+pow(gy,2)+0.00000001);
-    fmat Nx = gx/normDu;
-    fmat Ny = gy/normDu;
-    fmat nxx = [self gradient:Nx andIfXdirection:true];
-    fmat nyy = [self gradient:Ny andIfXdirection:false];
-    k = nxx+nyy;
-    return k;
-    
-}
-
--(fmat)gradient:(fmat) input andIfXdirection:(BOOL) direction
-{
-    fmat g(size(input), fill::zeros);
-    //get the x direction gradient
-    if(direction){
-        uword n = input.n_rows;
-        if (n>1) {
-            g.row(0) = input.row(1) -input.row(0);
-            g.row(n-1) = input.row(n-1) - input.row(n-2);
-        }
-        if (n>2){
-            g.rows(1, n-2) = (input.rows(2,n-1) - input.rows(0,n-3))/2;
-            
-        }
-    }
-    //get the y direction gradient
-    else{
-        uword n = input.n_cols;
-        if(n>1){
-            g.col(0) = input.col(1) - input.col(0);
-            g.col(n-1) = input.col(n-1) - input.col(n-2);
-            
-        }
-        if (n>2) {
-            g.cols(1, n-2) = (input.cols(2, n-1) - input.cols(0, n-3))/2;
-        }
-        
-    }
-    return g;
-    
 }
 
 - (void)setupFaceTrackingViews
@@ -301,28 +183,30 @@ using namespace arma;
             mouth_r = CGRectApplyAffineTransform(mouth_r, portraitRotationTransform_);
             mouth_r = CGRectApplyAffineTransform(mouth_r, cameraOutputToPreviewFrameTransform_);
             //this part if for processing matrix, first step, remove wired number
-         
+                contourmouth_.hidden = NO;
             if(10<mouth_r.size.height && mouth_r.size.height<200 && mouth_r.size.width>10&& mouth_r.size.width<200)
             {
                 contourmouth_.frame = mouth_rect;
-                cv::Mat cvImage(int(mouth_mask.n_cols),int( mouth_mask.n_rows),CV_8UC3,cv::Scalar(100,0,0));
-                for(int i = 0 ; i < mouth_mask.n_rows; i++){
-                    for(int j = 0; j<mouth_mask.n_cols; j++){
-                        cvImage.at<cv::Vec3b>(i,j)[0] = mouth_mask.at(i, j);
-                        cvImage.at<cv::Vec3b>(i,j)[1] = mouth_mask.at(i, j);
-                        cvImage.at<cv::Vec3b>(i,j)[2] = mouth_mask.at(i, j);
+                if (mouth_mask.rows!=0) {
+                cv::Mat present_mast = mouth_mask.clone();
+                cv::Mat cvImage(int(mouth_mask.rows),int( mouth_mask.cols),CV_8UC3,cv::Scalar(0,0,0));
+                for(int i = 0 ; i < mouth_mask.rows; i++){
+                    for(int j = 0; j<mouth_mask.cols; j++){
+                        cvImage.at<cv::Vec3b>(i,j)[0] =char(present_mast.at<Float64>(i, j));
+                        cvImage.at<cv::Vec3b>(i,j)[1] = char(present_mast.at<Float64>(i, j));
+                        cvImage.at<cv::Vec3b>(i,j)[2] = char(present_mast.at<Float64>(i, j));
                     }
                 }
-      //          cvImage.rowRange(upb, btb) = 255;
                 
-               cv::Mat gray; cv::cvtColor(cvImage, gray, CV_RGBA2GRAY); // Convert to grayscale
+                cv::Mat gray; cv::cvtColor(cvImage, gray, CV_RGBA2GRAY); // Convert to grayscale
                 cv::Mat display_im; cv::cvtColor(gray,display_im,CV_GRAY2BGR); // Get the display image
                 
                 cv::cvtColor(display_im, display_im, CV_BGR2RGBA);
+ 
                 contourmouth_.image = [self UIImageFromCVMat:display_im];
-                contourmouth_.hidden = NO;
-                
-                mouth_rect = mouth_r;
+                }
+      
+               mouth_rect = mouth_r;
                 have_mouth = true;
             }
             else
