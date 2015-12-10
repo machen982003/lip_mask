@@ -9,9 +9,14 @@
 #import "ViewController.h"
 #import "SMKDetectionCamera.h"
 #import <GPUImage/GPUImage.h>
+
+#ifdef __cplusplus
 #include <iostream>
 #include "armadillo"
+#include <opencv2/opencv.hpp>
 #include <math.h>
+#endif
+
 #define PI 3.1415926
 
 using namespace std;
@@ -21,13 +26,15 @@ using namespace arma;
     GPUImageView *cameraView_;
     SMKDetectionCamera *detector_; // Detector that should be used
     UIView *faceFeatureTrackingView_; // View for showing bounding box around the face
-    UIView *mouthFeatureTrackingView_;
-    UIView *contourmouth_;
+    UIImageView *contourmouth_;
     CGAffineTransform cameraOutputToPreviewFrameTransform_;
     CGAffineTransform portraitRotationTransform_;
     CGAffineTransform texelToPixelTransform_;
     GPUImageRawDataOutput *rawDataOutput; //can process the gpu data
     CGRect mouth_rect;
+    fmat mouth_mask;
+    int upb ;
+    int btb ;
     BOOL have_mouth;
     BOOL finished_processing;
      // save the gpu image
@@ -41,7 +48,6 @@ using namespace arma;
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
-    
     [self.view.layer setAffineTransform:CGAffineTransformMakeScale(-1, 1)];
     // Setup GPUImageView (not we are not using UIImageView here).........
     cameraView_ = [[GPUImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, self.view.frame.size.width, self.view.frame.size.height)];
@@ -49,7 +55,7 @@ using namespace arma;
     // Set the face detector to be used
     detector_ = [[SMKDetectionCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionFront];
    // [self.view addSubview:resultView_];
-    rawDataOutput = [[GPUImageRawDataOutput alloc]initWithImageSize:CGSizeMake(self.view.frame.size.width, self.view.frame.size.height) resultsInBGRAFormat:true];
+    rawDataOutput = [[GPUImageRawDataOutput alloc] initWithImageSize:CGSizeMake(640,480) resultsInBGRAFormat:true];
     [detector_ setOutputImageOrientation:UIInterfaceOrientationPortrait]; // Set to portrait
     cameraView_.fillMode = kGPUImageFillModePreserveAspectRatio;
 
@@ -57,16 +63,15 @@ using namespace arma;
     have_mouth = false;
     finished_processing = true;
     mouth_rect = CGRectMake(0, 0, 0, 0);
-    
-    [detector_ addTarget:rawDataOutput];
+    cout<<sizeof(GLubyte)<<endl;
+    [detector_ addTarget:cameraView_];
     [detector_ addTarget:medianFilter];
-    [medianFilter addTarget:cameraView_];
+    [medianFilter addTarget:rawDataOutput];
 
     // Important: add as a subview
     [self.view addSubview:cameraView_];
     // Setup the face box view
     [self setupFaceTrackingViews];
-    [self setupMouthTrackingViews];
     [self setupContourMouth];
     [self calculateTransformations];
     
@@ -82,16 +87,21 @@ using namespace arma;
                }];
     //set up the contour extraction method
     
-    __unsafe_unretained GPUImageRawDataOutput *weakOutput = rawDataOutput;
     __unsafe_unretained ViewController *weakself = self;
+    upb =1;
+    btb = 400;
     [rawDataOutput setNewFrameAvailableBlock:^{
-        [weakOutput lockFramebufferForReading];
-        GLubyte *outputByte = [weakOutput rawBytesForImage];
+        upb = 200;
+        btb = 300;
+        [weakself->rawDataOutput lockFramebufferForReading];
+     
+        GLubyte *outputByte = weakself->rawDataOutput.rawBytesForImage;
         if (have_mouth == true && finished_processing == true) {
+            upb =1;
+            btb = 400;
             [weakself extract_mout:outputByte];
         }
-        //[weakself donothing:Q];
-        [weakOutput unlockFramebufferAfterReading];
+        [weakself->rawDataOutput unlockFramebufferAfterReading];
     }];
 
     // Finally start the camera
@@ -102,15 +112,30 @@ using namespace arma;
 {
     // cout<<Q.n_cols<<" "<<Q.n_rows<<endl;
     finished_processing = false;
+   // cube test(reinterpret_cast<char*>(outputByte),10 ,10,4);
+//    fcube test1 = test.subcube(int(mouth_rect.origin.x), int(mouth_rect.origin.y), 0, int(mouth_rect.origin.x+mouth_rect.size.width-1), int(mouth_rect.origin.y+mouth_rect.size.height-1), 2);
+////    
+//    fmat b = test1.slice(0);
+//    b.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
+//    fmat g = test1.slice(1);
+//    g.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
+//    fmat r = test1.slice(2);
+//    r.reshape(1,int(mouth_rect.size.width)*int(mouth_rect.size.height));
+//    fmat rgb(3,int(mouth_rect.size.width)*int(mouth_rect.size.height), fill::zeros);
+//    rgb.row(0) = r;
+//    rgb.row(1) = g;
+//    rgb.row(2) = b;
+    
     fmat mou_rgb(3, int(mouth_rect.size.width)*int(mouth_rect.size.height), fill::zeros);
     
     for(int i=0; i<mouth_rect.size.height-1;i++){
         for(int j = 0; j<mouth_rect.size.width-1;j++){
             for(int k = 0; k<3; k++){
-                mou_rgb.at(2-k,i*mouth_rect.size.width+j) = outputByte[((j+int(mouth_rect.origin.x))+(i+int(mouth_rect.origin.y))*int(self.view.frame.size.width))*4+k];
+                mou_rgb.at(2-k,i*mouth_rect.size.width+j) = outputByte[((j+int(mouth_rect.origin.x))+(i+int(mouth_rect.origin.y))*480)*4+k];
             }
         }
     }
+  //  cout<< rgb.col(0)<<"  "<<mou_rgb.col(0)<<endl;
     fmat A = "0.299 0.587 0.114; 0.595716 -0.274453 -0.321263;0.211456 -0.622591 0.31135";
     fmat mou_YIQ = A*mou_rgb;
     fmat Q= mou_YIQ.row(2);
@@ -123,12 +148,17 @@ using namespace arma;
     fmat sub_matrix(int(height*0.4),int(width*0.8),fill::zeros);
     sub_matrix = sub_matrix -2;
     U.submat(int(height*0.3), int(width*0.1), int(height*0.3)+int(height*0.4)-1, int(width*0.1)+int(width*0.8)-1) = sub_matrix;
-    U = [self acwe:U image:Q];
+
+    [self acwe:U image:Q];
+//    cout<<U<<endl;
+//    cv::Mat cvfromarm(U.n_cols, U.n_rows, CV_32FC1, U.memptr());
+//    cv::Mat cvfinal(cvfromarm.t());
+//    contourmouth_.image = [self UIImageFromCVMat:cvfinal];
     finished_processing = true;
 }
 
 //get the contour of mouth
--(fmat)acwe:(fmat)Uinput image:(fmat) Qinput
+-(void)acwe:(fmat)Uinput image:(fmat) Qinput
 {
     
     fmat U = Uinput;
@@ -152,9 +182,9 @@ using namespace arma;
         //    P=pc*(4*del2(u) - K);               %ref[2]
         U = U+timestep*data_force;
     }
-   // cout << U.row(int(U.n_rows/2))<<endl;
-    //cout<<U.row(int(U.n_rows/4))<<endl;
-    return U;
+    U.elem((find(U>0))).zeros();
+    U.elem((find(U<0))).ones();
+    mouth_mask = U;
     
 }
 
@@ -234,28 +264,17 @@ using namespace arma;
     faceFeatureTrackingView_.userInteractionEnabled = NO;
     [self.view addSubview:faceFeatureTrackingView_]; // Add as a sub-view
 }
-//setup the view for mouth tracking
-- (void)setupMouthTrackingViews
-{
-    mouthFeatureTrackingView_ = [[UIView alloc] initWithFrame:CGRectZero];
-    mouthFeatureTrackingView_.layer.borderColor = [[UIColor redColor] CGColor];
-    mouthFeatureTrackingView_.layer.borderWidth = 3;
-    mouthFeatureTrackingView_.backgroundColor = [UIColor yellowColor];
-    mouthFeatureTrackingView_.hidden = YES;
-    mouthFeatureTrackingView_.userInteractionEnabled = NO;
-    mouthFeatureTrackingView_.alpha =0.5;
-    [self.view addSubview:mouthFeatureTrackingView_]; // Add as a sub-view
-}
 
 //setop the view four mouth contour
 -(void)setupContourMouth
 {
-    contourmouth_ = [[UIView alloc] initWithFrame:CGRectZero];
-    contourmouth_.layer.borderColor = [[UIColor yellowColor] CGColor];
-    contourmouth_.layer.borderWidth = 2;
-    contourmouth_.backgroundColor = [UIColor yellowColor];
+    contourmouth_ = [[UIImageView alloc] initWithFrame:CGRectZero];
+    contourmouth_.layer.borderColor = [[UIColor redColor] CGColor];
+    contourmouth_.layer.borderWidth = 3;
+    contourmouth_.backgroundColor = [UIColor clearColor];
     contourmouth_.hidden = YES;
     contourmouth_.userInteractionEnabled = NO;
+
     contourmouth_.alpha = 0.5;
     [self.view addSubview:contourmouth_];
 }
@@ -264,8 +283,8 @@ using namespace arma;
 {
     if (!objects.count) {
         faceFeatureTrackingView_.hidden = YES;
-        mouthFeatureTrackingView_.hidden = YES;
         contourmouth_.hidden = YES;
+
     }
     else {
         CIFaceFeature * feature = objects[0];
@@ -275,18 +294,34 @@ using namespace arma;
         face = CGRectApplyAffineTransform(face, cameraOutputToPreviewFrameTransform_);
         faceFeatureTrackingView_.frame = face;
         faceFeatureTrackingView_.hidden = NO;
-        if (feature.hasMouthPosition) {
+            if (feature.hasMouthPosition) {
             
             CGPoint mouth_p = feature.mouthPosition;
             CGRect mouth_r = CGRectMake(mouth_p.x-face.size.width*0.05, mouth_p.y-face.size.height*0.35, face.size.width*0.5, face.size.height*0.7);
             mouth_r = CGRectApplyAffineTransform(mouth_r, portraitRotationTransform_);
             mouth_r = CGRectApplyAffineTransform(mouth_r, cameraOutputToPreviewFrameTransform_);
-            mouthFeatureTrackingView_.frame = mouth_r;
-            mouthFeatureTrackingView_.hidden = NO;
             //this part if for processing matrix, first step, remove wired number
-            
+         
             if(10<mouth_r.size.height && mouth_r.size.height<200 && mouth_r.size.width>10&& mouth_r.size.width<200)
             {
+                contourmouth_.frame = mouth_rect;
+                cv::Mat cvImage(int(mouth_mask.n_cols),int( mouth_mask.n_rows),CV_8UC3,cv::Scalar(100,0,0));
+                for(int i = 0 ; i < mouth_mask.n_rows; i++){
+                    for(int j = 0; j<mouth_mask.n_cols; j++){
+                        cvImage.at<cv::Vec3b>(i,j)[0] = mouth_mask.at(i, j);
+                        cvImage.at<cv::Vec3b>(i,j)[1] = mouth_mask.at(i, j);
+                        cvImage.at<cv::Vec3b>(i,j)[2] = mouth_mask.at(i, j);
+                    }
+                }
+      //          cvImage.rowRange(upb, btb) = 255;
+                
+               cv::Mat gray; cv::cvtColor(cvImage, gray, CV_RGBA2GRAY); // Convert to grayscale
+                cv::Mat display_im; cv::cvtColor(gray,display_im,CV_GRAY2BGR); // Get the display image
+                
+                cv::cvtColor(display_im, display_im, CV_BGR2RGBA);
+                contourmouth_.image = [self UIImageFromCVMat:display_im];
+                contourmouth_.hidden = NO;
+                
                 mouth_rect = mouth_r;
                 have_mouth = true;
             }
@@ -351,6 +386,44 @@ using namespace arma;
     texelToPixelTransform_ = CGAffineTransformMakeScale(outputWidth, outputHeight);
 }
 
+
+// Member functions for converting from UIImage to cvMat
+-(UIImage *)UIImageFromCVMat:(cv::Mat)cvMat
+{
+    NSData *data = [NSData dataWithBytes:cvMat.data length:cvMat.elemSize()*cvMat.total()];
+    CGColorSpaceRef colorSpace;
+    
+    if (cvMat.elemSize() == 1) {
+        colorSpace = CGColorSpaceCreateDeviceGray();
+    } else {
+        colorSpace = CGColorSpaceCreateDeviceRGB();
+    }
+    
+    CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
+    
+    // Creating CGImage from cv::Mat
+    CGImageRef imageRef = CGImageCreate(cvMat.cols,                                 //width
+                                        cvMat.rows,                                 //height
+                                        8,                                          //bits per component
+                                        8 * cvMat.elemSize(),                       //bits per pixel
+                                        cvMat.step[0],                            //bytesPerRow
+                                        colorSpace,                                 //colorspace
+                                        kCGImageAlphaNone|kCGBitmapByteOrderDefault,// bitmap info
+                                        provider,                                   //CGDataProviderRef
+                                        NULL,                                       //decode
+                                        false,                                      //should interpolate
+                                        kCGRenderingIntentDefault                   //intent
+                                        );
+    
+    
+    // Getting UIImage from CGImage
+    UIImage *finalImage = [UIImage imageWithCGImage:imageRef];
+    CGImageRelease(imageRef);
+    CGDataProviderRelease(provider);
+    CGColorSpaceRelease(colorSpace);
+    
+    return finalImage;
+}
 
 - (void)didReceiveMemoryWarning {
     [super didReceiveMemoryWarning];
