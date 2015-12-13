@@ -1,0 +1,30 @@
+{
+  "DVTSourceControlWorkspaceBlueprintPrimaryRemoteRepositoryKey" : "B9633E7E47DC468CB1C5067182C228AA5C1B4A9D",
+  "DVTSourceControlWorkspaceBlueprintWorkingCopyRepositoryLocationsKey" : {
+
+  },
+  "DVTSourceControlWorkspaceBlueprintWorkingCopyStatesKey" : {
+    "E810C53B2F6DAB321504A81A87D8D689D8BA64E0" : 0,
+    "B9633E7E47DC468CB1C5067182C228AA5C1B4A9D" : 0
+  },
+  "DVTSourceControlWorkspaceBlueprintIdentifierKey" : "F450E5D0-AF20-4882-8A20-10230515D410",
+  "DVTSourceControlWorkspaceBlueprintWorkingCopyPathsKey" : {
+    "E810C53B2F6DAB321504A81A87D8D689D8BA64E0" : "",
+    "B9633E7E47DC468CB1C5067182C228AA5C1B4A9D" : "Smerk_Example\/"
+  },
+  "DVTSourceControlWorkspaceBlueprintNameKey" : "Smerk_Example",
+  "DVTSourceControlWorkspaceBlueprintVersion" : 204,
+  "DVTSourceControlWorkspaceBlueprintRelativePathToProjectKey" : "Smerk_Example.xcodeproj",
+  "DVTSourceControlWorkspaceBlueprintRemoteRepositoriesKey" : [
+    {
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositoryURLKey" : "https:\/\/github.com\/slucey-cs-cmu-edu\/Smerk_Example.git",
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositorySystemKey" : "com.apple.dt.Xcode.sourcecontrol.Git",
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositoryIdentifierKey" : "B9633E7E47DC468CB1C5067182C228AA5C1B4A9D"
+    },
+    {
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositoryURLKey" : "github.com:machen982003\/lip_mask.git",
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositorySystemKey" : "com.apple.dt.Xcode.sourcecontrol.Git",
+      "DVTSourceControlWorkspaceBlueprintRemoteRepositoryIdentifierKey" : "E810C53B2F6DAB321504A81A87D8D689D8BA64E0"
+    }
+  ]
+}

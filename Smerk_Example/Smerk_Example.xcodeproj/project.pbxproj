@@ -25,6 +25,7 @@
 		52D1A57C1C0CD08B00B4AA1F /* OpenGLES.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52D1A57B1C0CD08B00B4AA1F /* OpenGLES.framework */; };
 		52D1A57E1C0CD09500B4AA1F /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52D1A57D1C0CD09500B4AA1F /* CoreVideo.framework */; };
 		52D1A5801C0CD09E00B4AA1F /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 52D1A57F1C0CD09E00B4AA1F /* CoreMedia.framework */; };
+		DD19CDEB1C17445A0099F0E1 /* opencv2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DD19CDEA1C17445A0099F0E1 /* opencv2.framework */; };
 		DDBA09D51C1517DA00B8D5EC /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DDBA09D41C1517DA00B8D5EC /* Accelerate.framework */; };
 		DDBA09D81C1518E600B8D5EC /* armadillo in Resources */ = {isa = PBXBuildFile; fileRef = DDBA09D61C1518E600B8D5EC /* armadillo */; };
 		DDBA09D91C1518E600B8D5EC /* armadillo_bits in Resources */ = {isa = PBXBuildFile; fileRef = DDBA09D71C1518E600B8D5EC /* armadillo_bits */; };
@@ -79,6 +80,7 @@
 		52D1A57B1C0CD08B00B4AA1F /* OpenGLES.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGLES.framework; path = System/Library/Frameworks/OpenGLES.framework; sourceTree = SDKROOT; };
 		52D1A57D1C0CD09500B4AA1F /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
 		52D1A57F1C0CD09E00B4AA1F /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		DD19CDEA1C17445A0099F0E1 /* opencv2.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = opencv2.framework; sourceTree = "<group>"; };
 		DDBA09D41C1517DA00B8D5EC /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		DDBA09D61C1518E600B8D5EC /* armadillo */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = armadillo; sourceTree = "<group>"; };
 		DDBA09D71C1518E600B8D5EC /* armadillo_bits */ = {isa = PBXFileReference; lastKnownFileType = folder; path = armadillo_bits; sourceTree = "<group>"; };
@@ -89,6 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DD19CDEB1C17445A0099F0E1 /* opencv2.framework in Frameworks */,
 				DDBA09D51C1517DA00B8D5EC /* Accelerate.framework in Frameworks */,
 				52D1A5801C0CD09E00B4AA1F /* CoreMedia.framework in Frameworks */,
 				52D1A57E1C0CD09500B4AA1F /* CoreVideo.framework in Frameworks */,
@@ -119,6 +122,7 @@
 		52732FB41C0CCCBA00185F70 = {
 			isa = PBXGroup;
 			children = (
+				DD19CDEA1C17445A0099F0E1 /* opencv2.framework */,
 				DDBA09D41C1517DA00B8D5EC /* Accelerate.framework */,
 				52D1A57F1C0CD09E00B4AA1F /* CoreMedia.framework */,
 				52D1A57D1C0CD09500B4AA1F /* CoreVideo.framework */,
@@ -496,6 +500,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
@@ -515,6 +520,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",

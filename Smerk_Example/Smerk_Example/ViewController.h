@@ -7,9 +7,19 @@
 //
 
 #import <UIKit/UIKit.h>
+//
+@interface ViewController : UIViewController {
+    IBOutlet UISlider *slider;
+    IBOutlet UILabel *label1;
+    
+}
 
-@interface ViewController : UIViewController
-
+//#ifdef __cplusplus
+//#import <opencv2/opencv.hpp>
+//#import "opencv2/highgui/ios.h"
+//#endif
+//
+//@interface ViewController : UIViewController<CvPhotoCameraDelegate>
 
 @end
 

@@ -53,7 +53,7 @@ using namespace std;
     // Set the face detector to be used
     detector_ = [[SMKDetectionCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionFront];
    // [self.view addSubview:resultView_];
-    rawDataOutput = [[GPUImageRawDataOutput alloc] initWithImageSize:CGSizeMake(640,480) resultsInBGRAFormat:true];
+    rawDataOutput = [[GPUImageRawDataOutput alloc] initWithImageSize:CGSizeMake(480,640) resultsInBGRAFormat:true];
     [detector_ setOutputImageOrientation:UIInterfaceOrientationPortrait]; // Set to portrait
     cameraView_.fillMode = kGPUImageFillModePreserveAspectRatio;
 
@@ -104,35 +104,44 @@ using namespace std;
 
 -(void)extract_mout:(GLubyte *) outputByte
 {
-    // cout<<Q.n_cols<<" "<<Q.n_rows<<endl;
     finished_processing = false;
-    int col_num = floor(mouth_rect.size.width);
-    int row_nun = floor(mouth_rect.size.height);
-    cv::Mat mou_rgb(3, col_num*row_nun,CV_8U);
-    
-    for(int i=0; i<row_nun;i++){
-        for(int j = 0; j<col_num;j++){
-            for(int k = 0; k<3; k++){
-                int temp_col = j + floor(mouth_rect.origin.x);
-                int temp_row = i + floor(mouth_rect.origin.y);
-                mou_rgb.at<char>(2-k,i*col_num+j)= outputByte[(temp_col*int(self.view.frame.size.width)+temp_row)*4+k];
-            }
-        }
-    }
-//  //  cout<< rgb.col(0)<<"  "<<mou_rgb.col(0)<<endl;
-//    double A_double[3][3] = {{0.299, 0.587, 0.114},{0.595716, -0.274453, -0.321263},{0.211456, -0.522591, 0.31135}};
-//    cv::Mat A = cv::Mat(3,3,CV_64F,A_double);
-//    cv::Mat mou_YIQ = A*mou_rgb.clone();
-////    cout<<mou_YIQ<<endl;
-//    cv::Mat Q= mou_YIQ.row(2).clone();
-//    Q = Q.reshape(0,int(mouth_rect.size.height));
-//    mouth_mask = Q.clone();
-    cv::Mat redchannel = mou_rgb.row(0).clone();
- //   cout<<redchannel<<endl;
-    cv::Mat redchannel1 = redchannel.reshape(0,row_nun);
- //   cout<<redchannel<<endl;
-                                    
-    mouth_mask = redchannel1.clone();
+    int col_num = floor(480);
+    int row_nun = floor(640);
+    cv::Mat mout_rgb_raw(row_nun,col_num,CV_8UC4,outputByte);
+    cv::Mat mout_rgb;
+    mout_rgb_raw.convertTo(mout_rgb, CV_64FC4);
+    int x = mouth_rect.origin.x;
+    int y = mouth_rect.origin.y;
+    int h = mouth_rect.size.height;
+    int w = mouth_rect.size.width;
+    cv::Rect bound(y,x-w/4, h, w);
+    cv::Mat sub_mouth_rgb = mout_rgb(bound).clone();
+    cv::Mat planes[4];
+    cv::split(sub_mouth_rgb,planes);  // planes[2] is the red channel
+    cv::Mat b_channel = planes[0].reshape(0, 1);
+    cv::Mat g_channel = planes[1].reshape(0, 1);
+    cv::Mat r_channel = planes[2].reshape(0, 1);
+    double A_double[3][3] = {{0.299, 0.587, 0.114},{0.595716, -0.274453, -0.321263},{0.211456, -0.522591, 0.31135}};
+    cv::Mat rgb_mat;
+    cv::vconcat(r_channel, g_channel, rgb_mat);
+    cv::vconcat(rgb_mat, b_channel, rgb_mat);
+    cv::Mat A = cv::Mat(3,3,CV_64F,A_double);
+    cv::Mat mou_YIQ = A*rgb_mat.clone();
+    cv::Mat Q= mou_YIQ.row(2).clone();
+    Q = Q.reshape(0,w)*10;
+    Q.convertTo(Q, CV_8U);
+    cv::cvtColor(Q, Q, CV_GRAY2RGBA);
+    mouth_mask = Q;
+//    cv::Mat Qth;
+//    //by now using the threshold
+//    cv::threshold(Q, Qth, 100, 1, cv::THRESH_BINARY);
+//    cv::Mat g = cv::Mat::zeros(w, h, CV_8UC1);
+//    cv::vector<cv::Mat> channels;
+//    channels.push_back(g);
+//    channels.push_back(g);
+//    channels.push_back(Qth*200);
+//    channels.push_back(Qth);
+//    merge(channels, mouth_mask);
     finished_processing = true;
 }
 
@@ -151,12 +160,9 @@ using namespace std;
 -(void)setupContourMouth
 {
     contourmouth_ = [[UIImageView alloc] initWithFrame:CGRectZero];
-    contourmouth_.layer.borderColor = [[UIColor redColor] CGColor];
-    contourmouth_.layer.borderWidth = 3;
     contourmouth_.backgroundColor = [UIColor clearColor];
     contourmouth_.hidden = YES;
     contourmouth_.userInteractionEnabled = NO;
-
     contourmouth_.alpha = 0.5;
     [self.view addSubview:contourmouth_];
 }
@@ -180,33 +186,22 @@ using namespace std;
             
             CGPoint mouth_p = feature.mouthPosition;
             CGRect mouth_r = CGRectMake(mouth_p.x-face.size.width*0.05, mouth_p.y-face.size.height*0.35, face.size.width*0.5, face.size.height*0.7);
-            mouth_r = CGRectApplyAffineTransform(mouth_r, portraitRotationTransform_);
-            mouth_r = CGRectApplyAffineTransform(mouth_r, cameraOutputToPreviewFrameTransform_);
+            
             //this part if for processing matrix, first step, remove wired number
                 contourmouth_.hidden = NO;
             if(10<mouth_r.size.height && mouth_r.size.height<200 && mouth_r.size.width>10&& mouth_r.size.width<200)
             {
-                contourmouth_.frame = mouth_rect;
+               
+   
                 if (mouth_mask.rows!=0) {
-                cv::Mat present_mast = mouth_mask.clone();
-                cv::Mat cvImage(int(mouth_mask.rows),int( mouth_mask.cols),CV_8UC3,cv::Scalar(0,0,0));
-                for(int i = 0 ; i < mouth_mask.rows; i++){
-                    for(int j = 0; j<mouth_mask.cols; j++){
-                        cvImage.at<cv::Vec3b>(i,j)[0] =char(present_mast.at<Float64>(i, j));
-                        cvImage.at<cv::Vec3b>(i,j)[1] = char(present_mast.at<Float64>(i, j));
-                        cvImage.at<cv::Vec3b>(i,j)[2] = char(present_mast.at<Float64>(i, j));
-                    }
-                }
-                
-                cv::Mat gray; cv::cvtColor(cvImage, gray, CV_RGBA2GRAY); // Convert to grayscale
-                cv::Mat display_im; cv::cvtColor(gray,display_im,CV_GRAY2BGR); // Get the display image
-                
-                cv::cvtColor(display_im, display_im, CV_BGR2RGBA);
  
-                contourmouth_.image = [self UIImageFromCVMat:display_im];
+                contourmouth_.image = [self UIImageFromCVMat:mouth_mask];
                 }
-      
-               mouth_rect = mouth_r;
+                mouth_rect = mouth_r;
+                mouth_r = CGRectApplyAffineTransform(mouth_r, portraitRotationTransform_);
+                mouth_r = CGRectApplyAffineTransform(mouth_r, cameraOutputToPreviewFrameTransform_);
+                 contourmouth_.frame = mouth_r;
+               
                 have_mouth = true;
             }
             else
@@ -270,7 +265,11 @@ using namespace std;
     texelToPixelTransform_ = CGAffineTransformMakeScale(outputWidth, outputHeight);
 }
 
-
+-(IBAction)slidertheslider:(id)sender {
+    slider.hidden = NO;
+    label1.text = [NSString stringWithFormat:@"%1.1f",slider.value];
+    
+}
 // Member functions for converting from UIImage to cvMat
 -(UIImage *)UIImageFromCVMat:(cv::Mat)cvMat
 {
